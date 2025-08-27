@@ -46,7 +46,7 @@ typedef struct {
     CRITICAL_SECTION lock;
     CONDITION_VARIABLE cv;
     BOOL in_progress;
-    BOOL completed;
+    BOOL initialized;
     UINT32 event;
     HANDLE handle;
 } NotificationState;
@@ -238,11 +238,14 @@ int EvaluateAcpi(
 ECLIB_API
 INT32 InitializeNotification()
 {
+    if(g_notify.initialized) {
+        return ERROR_SUCCESS;
+    }
+
     // Initialize critical section for notification handling
     InitializeCriticalSection(&g_notify.lock);
     InitializeConditionVariable(&g_notify.cv);
     g_notify.in_progress = FALSE;
-    g_notify.completed = FALSE;
     g_notify.event = 0;
 
     int status = GetKMDFDriverHandle( 0, &g_notify.handle );
@@ -251,6 +254,7 @@ INT32 InitializeNotification()
         return status;
     }
     
+    g_notify.initialized = TRUE;
     return ERROR_SUCCESS;
 }
 
@@ -267,6 +271,10 @@ INT32 InitializeNotification()
 ECLIB_API
 VOID CleanupNotification()
 {
+    if(!g_notify.initialized) {
+        return;
+    }
+    
     EnterCriticalSection(&g_notify.lock);
     // Cancel any pending IO
     if(g_notify.handle) {
@@ -275,11 +283,13 @@ VOID CleanupNotification()
             SleepConditionVariableCS(&g_notify.cv, &g_notify.lock, INFINITE);
         }
         CloseHandle(g_notify.handle);
+        g_notify.handle = INVALID_HANDLE_VALUE;
     }
     LeaveCriticalSection(&g_notify.lock);
 
     // If handle is valid cancel any pending notifications and clean up critical secions
     DeleteCriticalSection(&g_notify.lock);
+    g_notify.initialized = FALSE;
 }
 
 /*

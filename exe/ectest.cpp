@@ -473,6 +473,7 @@ CleanUp:
     if(gExitEvent) SetEvent(gExitEvent);
     if(hThread) CancelSynchronousIo(hThread);
     if(hThread) WaitForSingleObject(hThread, INFINITE);
+    if(hThread) CleanupNotification();
     if(hThread) CloseHandle(hThread);
 
     if(gExitEvent) CloseHandle(gExitEvent);
