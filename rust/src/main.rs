@@ -1,5 +1,6 @@
 use color_eyre::Result;
 use ec_demo::app::App;
+use ec_demo::notifications::Notifications;
 
 fn main() -> Result<()> {
     color_eyre::install()?;
@@ -11,5 +12,6 @@ fn main() -> Result<()> {
     #[cfg(feature = "mock")]
     let source = ec_demo::mock::Mock::default();
 
-    App::new(source).run(terminal)
+    let notifications = Notifications::new()?;
+    App::new(source, &notifications).run(terminal)
 }

@@ -9,6 +9,7 @@ pub mod mock;
 pub mod app;
 pub mod battery;
 pub mod common;
+pub mod notifications;
 pub mod rtc;
 pub mod thermal;
 pub mod ucsi;

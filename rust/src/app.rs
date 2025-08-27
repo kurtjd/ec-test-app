@@ -1,3 +1,4 @@
+use crate::notifications::Notifications;
 use crate::rtc::Rtc;
 use crate::thermal::Thermal;
 use crate::ucsi::Ucsi;
@@ -71,7 +72,7 @@ pub struct App<S: Source> {
 
 impl<S: Source + Clone + 'static> App<S> {
     /// Construct a new instance of [`App`].
-    pub fn new(source: S) -> Self {
+    pub fn new(source: S, notifications: &Notifications) -> Self {
         let mut modules: BTreeMap<SelectedTab, Box<dyn Module>> = BTreeMap::new();
         let source = Rc::new(RefCell::new(source));
 
@@ -86,7 +87,7 @@ impl<S: Source + Clone + 'static> App<S> {
         modules.insert(SelectedTab::TabUCSI, Box::new(Ucsi::new()));
         modules.insert(
             SelectedTab::TabBattery,
-            Box::new(Battery::new(battery_source.borrow().clone())),
+            Box::new(Battery::new(battery_source.borrow().clone(), notifications)),
         );
 
         Self {

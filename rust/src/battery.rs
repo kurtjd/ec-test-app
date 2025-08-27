@@ -1,6 +1,7 @@
 use crate::Source;
 use crate::app::Module;
 use crate::common;
+use crate::notifications;
 use color_eyre::{Report, Result, eyre::eyre};
 
 use ratatui::{
@@ -194,7 +195,6 @@ impl Default for BatteryState {
     }
 }
 
-#[derive(Default)]
 pub struct Battery<S: Source> {
     bst_data: BstData,
     bix_data: BixData,
@@ -202,6 +202,8 @@ pub struct Battery<S: Source> {
     t_sec: usize,
     t_min: usize,
     source: S,
+    btp_rx: notifications::EventRx,
+    tripped: bool,
 }
 
 impl<S: Source> Module for Battery<S> {
@@ -210,6 +212,10 @@ impl<S: Source> Module for Battery<S> {
     }
 
     fn update(&mut self) {
+        if !self.tripped && self.btp_rx.drain_received() {
+            self.tripped = true;
+        }
+
         if let Ok(bst_data) = self.source.get_bst() {
             self.bst_data = bst_data;
             self.state.bst_success = true;
@@ -256,7 +262,9 @@ impl<S: Source> Module for Battery<S> {
 }
 
 impl<S: Source> Battery<S> {
-    pub fn new(source: S) -> Self {
+    pub fn new(source: S, notifications: &notifications::Notifications) -> Self {
+        let btp_rx = notifications.event_receiver(notifications::Event::BatteryTripPoint);
+
         let mut inst = Self {
             bst_data: Default::default(),
             bix_data: Default::default(),
@@ -264,6 +272,8 @@ impl<S: Source> Battery<S> {
             t_sec: Default::default(),
             t_min: Default::default(),
             source,
+            btp_rx,
+            tripped: false,
         };
 
         // This shouldn't change because BIX info is static so just read once
@@ -412,12 +422,14 @@ impl<S: Source> Battery<S> {
         vec![Line::raw(format!(
             "Current: {} {}",
             self.state.btp,
-            self.bix_data.power_unit.as_capacity_str()
+            self.bix_data.power_unit.as_capacity_str(),
         ))]
     }
 
     fn render_btp(&self, area: Rect, buf: &mut Buffer) {
-        let title_str = common::title_str_with_status("Trippoint", self.state.btp_success);
+        let status_str = common::title_str_with_status("Trippoint", self.state.btp_success);
+        let trip_str = if self.tripped { "⚠️" } else { "🟢" };
+        let title_str = format!("{status_str} {trip_str}");
         let title = common::title_block(&title_str, 0, LABEL_COLOR);
         let inner = title.inner(area);
         title.render(area, buf);
