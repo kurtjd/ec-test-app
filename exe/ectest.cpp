@@ -44,7 +44,7 @@ extern "C" {
     #include "..\inc\eclib.h"
 }
 
-//#define EC_TEST_NOTIFICATIONS
+#define EC_TEST_NOTIFICATIONS
 //#define EC_TEST_SHARED_BUFFER
 
 #define ACPI_OUTPUT_BUFFER_SIZE 1024
@@ -340,100 +340,18 @@ int ReadRxBuffer(
  */
 DWORD WINAPI NotificationThread(LPVOID lpParam) 
 {
-    HANDLE hDevice = NULL;
-    int status;
-    OVERLAPPED overlapped = {0};
-    HANDLE hReadyEvent = (HANDLE)lpParam;
+    UNREFERENCED_PARAMETER(lpParam);
 
-    // Open the device. Seperate open is required for the IO to go through.
-    status = GetKMDFDriverHandle(
-                         FILE_FLAG_OVERLAPPED,
-                         &hDevice );
-
-    if (hDevice != INVALID_HANDLE_VALUE) {
-
-        BOOL bRc;
-        ULONG bytesReturned;
-        NotificationRsp_t notify_response;
-        NotificationReq_t notify_request;
-
-        overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-        if (overlapped.hEvent == NULL) {
-            printf ( "Error in CreateEvent : %d\n", GetLastError());
-            goto CleanUp;
-        }
-
-        // Loop forever receiving events until we get an exit event
-        for(;;) {
-            printf("\n***       Calling DeviceIoControl IOCTL_GET_NOTIFICATION\n");
-            notify_request.type = 0x1;
-            bRc = DeviceIoControl ( hDevice,
-                                    (DWORD) IOCTL_GET_NOTIFICATION,
-                                    &notify_request,
-                                    sizeof(notify_request),
-                                    &notify_response,
-                                    sizeof( notify_response),
-                                    &bytesReturned,
-                                    &overlapped
-                                    );
-
-            if (!bRc && GetLastError() == ERROR_IO_PENDING) {
-
-                // If we haven't signalled hReadyEvent yet send it
-                if(hReadyEvent) {
-                    SetEvent(hReadyEvent);
-                    hReadyEvent = NULL;
-                }
-
-                HANDLE events[2] = { overlapped.hEvent, gExitEvent };
-                DWORD waitResult = WaitForMultipleObjects(2, events, FALSE, INFINITE);
-                switch (waitResult) {
-                    case WAIT_OBJECT_0:
-                        // DeviceIoControl completed
-                        if (!GetOverlappedResult(hDevice, &overlapped, &bytesReturned, TRUE)) {
-                            printf("Error in GetOverlappedResult: %d\n", GetLastError());
-                            status = ERROR_INVALID_PARAMETER;
-                            goto CleanUp;
-                        }
-                        break;
-                    case WAIT_OBJECT_0 + 1:
-                        // gExitEvent event is set
-                        printf ( "Cancelling Io \n");
-                        CancelIo(hDevice);
-                        status = ERROR_OPERATION_ABORTED;
-                        goto CleanUp;
-                    default:
-                        printf ( "Error Waiting for Completion : %d\n", waitResult);
-                        status = ERROR_INVALID_PARAMETER;
-                        goto CleanUp;
-                }
-            } else if ( !bRc ) {
-                printf ( "Error in DeviceIoControl : %d\n", GetLastError());
-                status = ERROR_INVALID_PARAMETER;
-                goto CleanUp;
-            }
-
-            // Print out notification details
-            printf("\n***       Received Notification \n");
-            printf("***                count: 0x%llx\n", notify_response.count);
-            printf("***            timestamp: 0x%llx\n", notify_response.timestamp);
-            printf("***            lastevent: 0x%x\n", notify_response.lastevent);
-
-            #ifdef EC_TEST_SHARED_BUFFER
-            ReadRxBuffer(hDevice);
-            #endif
-
-            // Reset the event and wait for next notification
-            ResetEvent(overlapped.hEvent);
+    // Main loop to wait for notifications
+    for(;;) {
+        UINT32 event = WaitForNotification(0);
+        printf("Received Notification Event: 0x%x\n", event);
+        // If we get exit event then break out of loop and exit thread
+        if( WaitForSingleObject(gExitEvent, 0) == WAIT_OBJECT_0) {
+            break;
         }
     }
-CleanUp:
-    // Cancel any pending IO
-    if(hDevice) CancelIo(hDevice);
-    if(hDevice) CloseHandle(hDevice);
-    if(overlapped.hEvent) CloseHandle(overlapped.hEvent);
 
-    printf("Exiting Notification Thread \n");
     return 0;
 }
 
@@ -456,36 +374,22 @@ HANDLE StartNotificationListener(void)
     HANDLE hThread;
     DWORD dwThreadId;
 
-    HANDLE hReadyEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-    if (hReadyEvent == NULL) {
+    // Initialize external notification lib
+    int status = InitializeNotification();
+    if(status != ERROR_SUCCESS) {
+        printf("InitializeNotification failed, status: 0x%x\n", status);
         return NULL;
     }
-
 
     // Create the thread
     hThread = CreateThread(
         NULL,                   // Default security attributes
         0,                      // Default stack size
         NotificationThread,     // Thread routine
-        hReadyEvent,            // Parameter to thread routine
+        NULL,                   // Parameter to thread routine
         0,                      // Default creation flags
         &dwThreadId);           // Receive thread identifier
 
-    if (hThread != NULL) {
-        // Wait for the thread ready or termination
-        HANDLE events[2] = { hThread, hReadyEvent };
-        DWORD waitResult = WaitForMultipleObjects(2, events, FALSE, INFINITE);
-        switch (waitResult) {
-            case WAIT_OBJECT_0:
-                printf("Notification Thread Terminated.\n");
-                hThread = NULL;
-                break;
-            case WAIT_OBJECT_0 + 1:
-                printf("hReadyEvent signalled.\n");
-        }
-    }
-
-    CloseHandle(hReadyEvent);
     return hThread;
 }
 #endif // EC_TEST_NOTIFICATIONS
@@ -567,9 +471,11 @@ CleanUp:
 
     // Signal the exit event to stop the thread
     if(gExitEvent) SetEvent(gExitEvent);
+    if(hThread) CancelSynchronousIo(hThread);
     if(hThread) WaitForSingleObject(hThread, INFINITE);
-
+    if(hThread) CleanupNotification();
     if(hThread) CloseHandle(hThread);
+
     if(gExitEvent) CloseHandle(gExitEvent);
     if(hMutex) CloseHandle(hMutex);
 

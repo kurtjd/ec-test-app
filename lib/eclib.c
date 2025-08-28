@@ -34,6 +34,7 @@ SOFTWARE.
 #include <Acpiioct.h>
 #include <devioctl.h>
 #include "..\inc\eclib.h"
+#include "..\inc\ectest.h"
 
 #define MAX_DEVPATH_LENGTH  64
 
@@ -41,19 +42,31 @@ SOFTWARE.
 // {5362ad97-ddfe-429d-9305-31c0ad27880a}
 const GUID GUID_DEVCLASS_ECTEST = { 0x5362ad97, 0xddfe, 0x429d, { 0x93, 0x05, 0x31, 0xc0, 0xad, 0x27, 0x88, 0x0a } };
 
+typedef struct {
+    CRITICAL_SECTION lock;
+    CONDITION_VARIABLE cv;
+    BOOL in_progress;
+    BOOL initialized;
+    UINT32 event;
+    HANDLE handle;
+} NotificationState;
+
+static NotificationState g_notify;
+
 /*
  * Function: GetGUIDPath
- * Description:
- *   Retrieves the device path for a specified device class GUID and device name.
+ * ---------------------
+ * Retrieves the device path for a device matching the specified device class GUID and device name.
+ *
  * Parameters:
  *   GUID GUID_DEVCLASS_SYSTEM - The GUID of the device class to search for.
  *   const wchar_t* name       - The name of the device to match.
  *   wchar_t* path             - Output buffer for the device path.
  *   size_t path_len           - Length of the output buffer.
- * Return Value:
- *   Returns path if successful, NULL otherwise.
+ *
+ * Returns:
+ *   wchar_t* - Pointer to the device path if found, NULL otherwise.
  */
-
 wchar_t *GetGUIDPath(
     _In_ GUID GUID_DEVCLASS_SYSTEM,
     _In_ const wchar_t* name,
@@ -113,19 +126,18 @@ wchar_t *GetGUIDPath(
 }
 
 /*
- * Function: int GetKMDFDriverHandle
- *
- * Description:
- * The GetKMDFDriverHandle function retrieves a handle to a Kernel-Mode Driver Framework (KMDF) driver.
- * It searches for the device path using a specified device class GUID and device name, and then opens the device.
+ * Function: GetKMDFDriverHandle
+ * ----------------------------
+ * Retrieves a handle to the KMDF driver by searching for the device path using the specified
+ * device class GUID and device name, then opens the device.
  *
  * Parameters:
- * DWORD flags: Flags to open file handle with
- * HANDLE *hDevice: A pointer to a handle that will receive the device handle.
+ *   DWORD flags      - Flags to open the file handle with.
+ *   HANDLE *hDevice  - Pointer to a handle that will receive the device handle.
  *
- * Return Value:
- * Returns ERROR_SUCCESS if the device handle is successfully retrieved, otherwise returns ERROR_INVALID_HANDLE.
-*/
+ * Returns:
+ *   int - ERROR_SUCCESS if successful, ERROR_INVALID_HANDLE otherwise.
+ */
 ECLIB_API
 int GetKMDFDriverHandle(
     _In_ DWORD flags,
@@ -158,15 +170,17 @@ int GetKMDFDriverHandle(
 
 /*
  * Function: EvaluateAcpi
- * Description:
- *   Evaluates an ACPI method on a specified device and returns the result.
+ * ----------------------
+ * Evaluates an ACPI method on the specified device and returns the result.
+ *
  * Parameters:
- *   void* acpi_input     - ACPI_EVAL_INPUT_xxxx structure pointer passed through
- *   size_t input_len     - Length of input structure
- *   BYTE* buffer         - Output buffer for the result.
- *   size_t* buf_len      - Input: size of buffer; Output: bytes returned.
- * Return Value:
- *   ERROR_SUCCESS on success, ERROR_INVALID_PARAMETER on failure.
+ *   void* acpi_input   - Pointer to ACPI_EVAL_INPUT_xxxx structure.
+ *   size_t input_len   - Length of the input structure.
+ *   BYTE* buffer       - Output buffer for the result.
+ *   size_t* buf_len    - Input: size of buffer; Output: bytes returned.
+ *
+ * Returns:
+ *   int - ERROR_SUCCESS on success, ERROR_INVALID_PARAMETER on failure.
  */
 ECLIB_API
 int EvaluateAcpi(
@@ -211,3 +225,139 @@ int EvaluateAcpi(
     return ERROR_INVALID_PARAMETER;
 }
 
+/*
+ * Function: InitializeNotification
+ * -------------------------------
+ * Initializes the notification system by setting up synchronization primitives
+ * (critical section and condition variable) and opening a handle to the KMDF driver.
+ * This function must be called before using notification-related APIs.
+ *
+ * Returns:
+ *   INT32 - ERROR_SUCCESS on success, or an error code on failure.
+ */
+ECLIB_API
+INT32 InitializeNotification()
+{
+    if(g_notify.initialized) {
+        return ERROR_SUCCESS;
+    }
+
+    // Initialize critical section for notification handling
+    InitializeCriticalSection(&g_notify.lock);
+    InitializeConditionVariable(&g_notify.cv);
+    g_notify.in_progress = FALSE;
+    g_notify.event = 0;
+
+    int status = GetKMDFDriverHandle( 0, &g_notify.handle );
+    if(status != ERROR_SUCCESS || g_notify.handle == INVALID_HANDLE_VALUE) {
+        DeleteCriticalSection(&g_notify.lock);
+        return status;
+    }
+    
+    g_notify.initialized = TRUE;
+    return ERROR_SUCCESS;
+}
+
+/*
+ * Function: CleanupNotification
+ * ----------------------------
+ * Cleans up the notification system by canceling any pending I/O operations,
+ * closing the KMDF driver handle, and deleting the critical section.
+ * Should be called when notification handling is no longer needed.
+ *
+ * Returns:
+ *   VOID
+ */
+ECLIB_API
+VOID CleanupNotification()
+{
+    if(!g_notify.initialized) {
+        return;
+    }
+    
+    EnterCriticalSection(&g_notify.lock);
+    // Cancel any pending IO
+    if(g_notify.handle) {
+        while(g_notify.in_progress) {
+            CancelIo(g_notify.handle);
+            SleepConditionVariableCS(&g_notify.cv, &g_notify.lock, INFINITE);
+        }
+        CloseHandle(g_notify.handle);
+        g_notify.handle = INVALID_HANDLE_VALUE;
+    }
+    LeaveCriticalSection(&g_notify.lock);
+
+    // If handle is valid cancel any pending notifications and clean up critical secions
+    DeleteCriticalSection(&g_notify.lock);
+    g_notify.initialized = FALSE;
+}
+
+/*
+ * Function: WaitForNotification
+ * -----------------------------
+ * Waits for a notification event from the KMDF driver. If event is 0, waits for any event.
+ *
+ * Parameters:
+ *   UINT32 event - The event code to wait for (0 for any event).
+ *
+ * Returns:
+ *   UINT32 - The event code received, or 0 if none.
+ */
+ECLIB_API
+UINT32 WaitForNotification(UINT32 event)
+{
+    HANDLE hDevice = NULL;
+    UINT32 ievent = 0;
+    NotificationRsp_t notify_response = {0};
+    NotificationReq_t notify_request = {0};
+
+    // Make sure Initialization has been done
+    if(g_notify.handle == INVALID_HANDLE_VALUE) {
+        return 0;
+    }   
+
+    // Loop until we get event we are looking for
+    for(;;) {
+        // There could be many calls into this function, only first call calls into KMDF driver
+        // Subsequent calls just wait for the event to be set by the KMDF driver
+        EnterCriticalSection(&g_notify.lock);
+
+        if(!g_notify.in_progress) {
+            g_notify.in_progress = TRUE;
+            LeaveCriticalSection(&g_notify.lock);
+
+            ULONG bytesReturned;
+            notify_request.type = 0x1;
+            if(DeviceIoControl ( g_notify.handle,
+                                (DWORD) IOCTL_GET_NOTIFICATION,
+                                &notify_request,
+                                sizeof(notify_request),
+                                &notify_response,
+                                sizeof( notify_response),
+                                &bytesReturned,
+                                NULL
+                                ) == TRUE )
+            {
+                g_notify.event = notify_response.lastevent;               
+            } else {
+                g_notify.event = 0;
+            }
+
+            g_notify.in_progress = FALSE;
+            WakeAllConditionVariable(&g_notify.cv);
+        } else {
+            // Wait for notification to be set
+            LeaveCriticalSection(&g_notify.lock);
+            SleepConditionVariableCS(&g_notify.cv, &g_notify.lock, INFINITE);
+        }
+
+        if(event == 0 || g_notify.event == event) {
+            ievent = g_notify.event;
+            break;
+        }
+
+    } 
+
+    // Return no event
+    return ievent;
+}

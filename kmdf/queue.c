@@ -158,7 +158,7 @@ NTSTATUS SetupNotification(WDFDEVICE device)
     if (NT_SUCCESS(status)) {
         status = acpiInterface.RegisterForDeviceNotifications(acpiInterface.Context,
                                                               NotificationCallback, 
-                                                              NULL);
+                                                              device);
     }
     return status;
 }

@@ -37,3 +37,12 @@ ECLIB_API int EvaluateAcpi(
     _Out_ BYTE* buffer,
     _In_ size_t* buf_len
 );
+
+ECLIB_API
+int InitializeNotification();
+
+ECLIB_API
+VOID CleanupNotification();
+
+ECLIB_API
+UINT32 WaitForNotification(UINT32 event);
