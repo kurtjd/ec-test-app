@@ -291,18 +291,31 @@ impl<S: Source> Battery<S> {
     }
 
     fn render_bst_chart(&self, area: Rect, buf: &mut Buffer) {
+        let samples = self.state.samples.get();
+        let y_min = samples
+            .iter()
+            .map(|(_, val)| *val as u32)
+            .min()
+            .unwrap()
+            .saturating_sub(100);
+        let y_max = samples
+            .iter()
+            .map(|(_, val)| *val as u32)
+            .max()
+            .unwrap()
+            .saturating_add(100)
+            .clamp(0, self.bix_data.design_capacity);
+        let y_mid = y_min + (y_max - y_min) / 2;
+
         let y_labels = [
-            "0".bold(),
-            Span::styled(
-                format!("{}", self.bix_data.design_capacity / 2),
-                Style::default().bold(),
-            ),
-            Span::styled(format!("{}", self.bix_data.design_capacity), Style::default().bold()),
+            Span::styled(format!("{y_min}"), Style::default().bold()),
+            Span::styled(format!("{y_mid}"), Style::default().bold()),
+            Span::styled(format!("{y_max}"), Style::default().bold()),
         ];
         let graph = common::Graph {
             title: "Capacity vs Time".to_string(),
             color: Color::Rgb(0xff, 0x5f, 0x5f),
-            samples: self.state.samples.get(),
+            samples: samples.clone(),
             x_axis: "Time (10s)".to_string(),
             x_bounds: [0.0, 60.0],
             x_labels: common::time_labels(self.t_min, MAX_SAMPLES),
