@@ -8,7 +8,7 @@ use color_eyre::{Report, Result, eyre::eyre};
 use ratatui::{
     buffer::Buffer,
     crossterm::event::{Event, KeyCode, KeyEventKind},
-    layout::{Direction, Rect},
+    layout::{Constraint, Direction, Rect},
     style::{Color, Style, Stylize, palette::tailwind},
     text::{Line, Span},
     widgets::{Bar, BarChart, BarGroup, Block, BorderType, Borders, Paragraph, Widget},
@@ -436,7 +436,8 @@ impl<S: Source> Battery<S> {
         let inner = title.inner(area);
         title.render(area, buf);
 
-        let [current_area, input_area] = common::area_split(inner, Direction::Vertical, 30, 70);
+        let [current_area, input_area] =
+            common::area_split_constrained(inner, Direction::Vertical, Constraint::Min(0), Constraint::Max(3));
 
         Paragraph::new(self.create_trippoint()).render(current_area, buf);
         self.render_btp_input(input_area, buf);
