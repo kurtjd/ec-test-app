@@ -1,7 +1,6 @@
 use clap::Parser;
 use color_eyre::Result;
 use ec_demo::app::{App, AppArgs};
-use ec_demo::notifications::Notifications;
 
 fn main() -> Result<()> {
     color_eyre::install()?;
@@ -14,6 +13,5 @@ fn main() -> Result<()> {
     let source = ec_demo::mock::Mock::default();
 
     let args = AppArgs::parse();
-    let notifications = Notifications::new()?;
-    App::new(source, args, &notifications).run(terminal)
+    App::new(source, args).run(terminal)
 }

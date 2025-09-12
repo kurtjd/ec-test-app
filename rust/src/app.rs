@@ -1,5 +1,4 @@
 use crate::debug::Debug;
-use crate::notifications::Notifications;
 use crate::rtc::Rtc;
 use crate::thermal::Thermal;
 use crate::ucsi::Ucsi;
@@ -91,7 +90,7 @@ pub struct App<S: Source> {
 
 impl<S: Source + Clone + 'static> App<S> {
     /// Construct a new instance of [`App`].
-    pub fn new(source: S, args: AppArgs, notifications: &Notifications) -> Self {
+    pub fn new(source: S, args: AppArgs) -> Self {
         let mut modules: BTreeMap<SelectedTab, Box<dyn Module>> = BTreeMap::new();
         let source = Rc::new(RefCell::new(source));
 
@@ -114,7 +113,6 @@ impl<S: Source + Clone + 'static> App<S> {
             Box::new(Debug::new(
                 debug_source.borrow().clone(),
                 args.bin.as_ref().map(std::path::PathBuf::from),
-                notifications,
             )),
         );
 

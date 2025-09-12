@@ -1,7 +1,6 @@
 use crate::Source;
 use crate::app::Module;
 use crate::common;
-use crate::notifications;
 use clap::{Parser, Subcommand};
 use color_eyre::eyre::Result;
 use color_eyre::eyre::eyre;
@@ -197,8 +196,9 @@ impl LogView {
             }
             // Unless it was an error
             // TODO: Handle recovery?
-            Err(e) => {
-                self.log_meta(e);
+            Err(_e) => {
+                // Don't log errors for now, just skip them
+                // self.log_meta(e);
             }
             // But if was unexpected EOF, just do nothing until we get the full frame
             _ => {}
@@ -309,7 +309,6 @@ pub struct Debug<S: Source> {
     log_view: LogView,
     defmt: Option<DefmtHandler>,
     cmd_handler: CmdHandler,
-    event_rx: notifications::EventRx<Result<Vec<u8>>>,
 }
 
 impl<S: Source> Module for Debug<S> {
@@ -323,14 +322,12 @@ impl<S: Source> Module for Debug<S> {
 
     fn update(&mut self) {
         if let Some(defmt) = &mut self.defmt {
-            while let Some(data) = self.event_rx.receive() {
-                match data {
-                    Ok(raw) => {
-                        let frame = defmt.read_log(raw);
-                        self.log_view.log_frame(frame);
-                    }
-                    Err(e) => self.log_view.log_meta(e),
+            match self.source.get_dbg() {
+                Ok(raw) => {
+                    let frame = defmt.read_log(raw);
+                    self.log_view.log_frame(frame);
                 }
+                Err(e) => self.log_view.log_meta(e),
             }
         }
     }
@@ -366,27 +363,12 @@ impl<S: Source> Module for Debug<S> {
 }
 
 impl<S: Source> Debug<S> {
-    pub fn new(source: S, elf_path: Option<PathBuf>, notifications: &notifications::Notifications) -> Self {
-        // Sources must ensure they are thread-safe
-        // Currently mock and ACPI are thread-safe
-        let src = source.clone();
-
-        // Reads the raw defmt frame from source every time notification is received and stores in buffer
-        // Previously, the event receiver just queued up bools when notifications were received so tabs could poll that
-        // But, not particularly effective for debug tab since the debug service will only send a new notification after the previous has been acknowledged
-        // This resulted in the debug tab only getting a single debug frame once a second which is too slow
-        // So instead the event receiver thread itself will call `get_dbg` as notifications come in and store the raw frames in a buffer
-        // The debug tab can then just process every raw frame once a second and push all those to the log viewer
-        // This allows for a more real-time approach of receiving logs
-        let event_rx =
-            notifications.event_receiver(notifications::Event::DbgFrameAvailable, move |_event| src.get_dbg());
-
+    pub fn new(source: S, elf_path: Option<PathBuf>) -> Self {
         let mut debug = Self {
             source,
             log_view: Default::default(),
             defmt: None,
             cmd_handler: Default::default(),
-            event_rx,
         };
 
         if let Some(elf_path) = elf_path {
@@ -417,10 +399,6 @@ impl<S: Source> Debug<S> {
             Ok(defmt) => {
                 self.log_view.log_meta(format!("Attached ELF: {}", defmt.bin_name));
                 self.defmt = Some(defmt);
-                self.event_rx.start();
-
-                // Initial read to kick off debug service (since we would've missed last notification)
-                let _ = self.source.get_dbg();
             }
             Err(e) => {
                 self.defmt = None;
@@ -433,6 +411,5 @@ impl<S: Source> Debug<S> {
         self.defmt = None;
         self.log_view
             .log_meta("No ELF attached so debug logs are not available");
-        self.event_rx.stop();
     }
 }
