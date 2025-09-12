@@ -218,11 +218,11 @@ impl<S: Source> Module for Battery<S> {
             self.state.bst_success = false;
         }
 
-        // In mock demo, update graph every second, but real-life update every minute
+        // In mock demo, update graph every second, but real-life update every 10 seconds
         #[cfg(feature = "mock")]
         let update_graph = true;
         #[cfg(not(feature = "mock"))]
-        let update_graph = (self.t_sec % 60) == 0;
+        let update_graph = (self.t_sec % 10) == 0;
 
         self.t_sec += 1;
         if update_graph {
@@ -301,9 +301,9 @@ impl<S: Source> Battery<S> {
         ];
         let graph = common::Graph {
             title: "Capacity vs Time".to_string(),
-            color: Color::Red,
+            color: Color::Rgb(0xff, 0x5f, 0x5f),
             samples: self.state.samples.get(),
-            x_axis: "Time (m)".to_string(),
+            x_axis: "Time (10s)".to_string(),
             x_bounds: [0.0, 60.0],
             x_labels: common::time_labels(self.t_min, MAX_SAMPLES),
             y_axis: format!("Capacity ({})", self.bix_data.power_unit.as_capacity_str()),

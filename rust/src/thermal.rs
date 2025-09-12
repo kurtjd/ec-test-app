@@ -215,7 +215,7 @@ impl<S: Source> Thermal<S> {
         ];
         let graph = common::Graph {
             title: "Temperature vs Time".to_string(),
-            color: Color::Red,
+            color: Color::Rgb(0xff, 0x5f, 0x5f),
             samples: self.sensor.samples.get(),
             x_axis: "Time (s)".to_string(),
             x_bounds: [0.0, 60.0],
@@ -287,7 +287,7 @@ impl<S: Source> Thermal<S> {
         ];
         let graph = common::Graph {
             title: "Fan RPM vs Time".to_string(),
-            color: Color::Blue,
+            color: Color::Rgb(0x33, 0x8f, 0xff),
             samples: self.fan.samples.get(),
             x_axis: "Time (s)".to_string(),
             x_bounds: [0.0, 60.0],
