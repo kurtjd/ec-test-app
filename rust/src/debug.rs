@@ -324,7 +324,7 @@ impl<S: Source> Module for Debug<S> {
         if let Some(defmt) = &mut self.defmt {
             match self.source.get_dbg() {
                 Ok(raw) => {
-                    if raw.as_slice() != [0xD, 0xE, 0xA, 0xD, 0xB, 0xE, 0xE, 0xF] {
+                    if raw.as_slice() != [0x00, 0x00, 0x00, 0x00, 0xDE, 0xAD, 0xBE, 0xEF] {
                         let frame = defmt.read_log(raw);
                         self.log_view.log_frame(frame);
                     }
