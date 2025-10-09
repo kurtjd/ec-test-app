@@ -4,11 +4,13 @@ use crate::common;
 use crate::widgets::battery;
 use color_eyre::{Report, Result, eyre::eyre};
 
-use ratatui::widgets::{StatefulWidget, Widget};
+use ratatui::style::Modifier;
+use ratatui::text::Text;
+use ratatui::widgets::{Row, StatefulWidget, Table, Widget};
 use ratatui::{
     buffer::Buffer,
     crossterm::event::{Event, KeyCode, KeyEventKind},
-    layout::{Direction, Rect},
+    layout::{Constraint, Direction, Rect},
     style::{Color, Style, Stylize, palette::tailwind},
     text::{Line, Span},
     widgets::{Block, Paragraph},
@@ -314,76 +316,103 @@ impl<S: Source> Battery<S> {
         common::render_chart(area, buf, graph);
     }
 
-    fn create_info(&self) -> Vec<Line<'static>> {
+    fn create_info(&self) -> Vec<Row<'static>> {
         let power_unit = self.bix_data.power_unit;
+
         vec![
-            Line::raw(format!("Revision:               {}", self.bix_data.revision)),
-            Line::raw(format!(
-                "Power Unit:             {}",
-                self.bix_data.power_unit.as_rate_str()
-            )),
-            Line::raw(format!(
-                "Design Capacity:        {} {}",
-                self.bix_data.design_capacity,
-                power_unit.as_capacity_str()
-            )),
-            Line::raw(format!(
-                "Last Full Capacity:     {} {}",
-                self.bix_data.last_full_capacity,
-                power_unit.as_capacity_str()
-            )),
-            Line::raw(format!(
-                "Battery Technology:     {}",
-                self.bix_data.battery_technology.as_str()
-            )),
-            Line::raw(format!("Design Voltage:         {} mV", self.bix_data.design_voltage)),
-            Line::raw(format!(
-                "Warning Capacity:       {} {}",
-                self.bix_data.warning_capacity,
-                power_unit.as_capacity_str()
-            )),
-            Line::raw(format!(
-                "Low Capacity:           {} {}",
-                self.bix_data.low_capacity,
-                power_unit.as_capacity_str()
-            )),
-            Line::raw(format!("Cycle Count:            {}", self.bix_data.cycle_count)),
-            Line::raw(format!(
-                "Accuracy:               {}%",
-                self.bix_data.accuracy as f64 / 1000.0
-            )),
-            Line::raw(format!("Max Sample Time:        {} ms", self.bix_data.max_sample_time)),
-            Line::raw(format!("Min Sample Time:        {} ms", self.bix_data.min_sample_time)),
-            Line::raw(format!(
-                "Max Average Interval:   {} ms",
-                self.bix_data.max_average_interval
-            )),
-            Line::raw(format!(
-                "Min Average Interval:   {} ms",
-                self.bix_data.min_average_interval
-            )),
-            Line::raw(format!(
-                "Capacity Granularity 1: {} {}",
-                self.bix_data.capacity_gran1,
-                power_unit.as_capacity_str()
-            )),
-            Line::raw(format!(
-                "Capacity Granularity 2: {} {}",
-                self.bix_data.capacity_gran2,
-                power_unit.as_capacity_str()
-            )),
-            Line::raw(format!("Model Number:           {}", self.bix_data.model_number)),
-            Line::raw(format!("Serial Number:          {}", self.bix_data.serial_number)),
-            Line::raw(format!("Battery Type:           {}", self.bix_data.battery_type)),
-            Line::raw(format!("OEM Info:               {}", self.bix_data.oem_info)),
-            Line::raw(format!("Swapping Capability:    {}", self.bix_data.swap_cap.as_str())),
+            Row::new(vec![
+                Text::styled("Revision", Style::default().add_modifier(Modifier::BOLD)),
+                format!("{}", self.bix_data.revision).into(),
+            ]),
+            Row::new(vec![
+                Text::raw("Power Unit").add_modifier(Modifier::BOLD),
+                format!("{}", self.bix_data.power_unit.as_rate_str()).into(),
+            ]),
+            Row::new(vec![
+                Text::raw("Design Capacity").add_modifier(Modifier::BOLD),
+                format!("{} {}", self.bix_data.design_capacity, power_unit.as_capacity_str()).into(),
+            ]),
+            Row::new(vec![
+                Text::raw("Last Full Capacity").add_modifier(Modifier::BOLD),
+                format!("{} {}", self.bix_data.last_full_capacity, power_unit.as_capacity_str()).into(),
+            ]),
+            Row::new(vec![
+                Text::raw("Battery Technology").add_modifier(Modifier::BOLD),
+                format!("{}", self.bix_data.battery_technology.as_str()).into(),
+            ]),
+            Row::new(vec![
+                Text::raw("Design Voltage").add_modifier(Modifier::BOLD),
+                format!("{} mV", self.bix_data.design_voltage).into(),
+            ]),
+            Row::new(vec![
+                Text::raw("Warning Capacity").add_modifier(Modifier::BOLD),
+                format!("{} {}", self.bix_data.warning_capacity, power_unit.as_capacity_str()).into(),
+            ]),
+            Row::new(vec![
+                Text::raw("Low Capacity").add_modifier(Modifier::BOLD),
+                format!("{} {}", self.bix_data.low_capacity, power_unit.as_capacity_str()).into(),
+            ]),
+            Row::new(vec![
+                Text::raw("Cycle Count").add_modifier(Modifier::BOLD),
+                format!("{}", self.bix_data.cycle_count).into(),
+            ]),
+            Row::new(vec![
+                Text::raw("Accuracy").add_modifier(Modifier::BOLD),
+                format!("{}%", self.bix_data.accuracy as f64 / 1000.0).into(),
+            ]),
+            Row::new(vec![
+                Text::raw("Max Sample Time").add_modifier(Modifier::BOLD),
+                format!("{} ms", self.bix_data.max_sample_time).into(),
+            ]),
+            Row::new(vec![
+                Text::raw("Mix Sample Time").add_modifier(Modifier::BOLD),
+                format!("{} ms", self.bix_data.min_sample_time).into(),
+            ]),
+            Row::new(vec![
+                Text::raw("Max Average Interval").add_modifier(Modifier::BOLD),
+                format!("{} ms", self.bix_data.max_average_interval).into(),
+            ]),
+            Row::new(vec![
+                Text::raw("Min Average Interval").add_modifier(Modifier::BOLD),
+                format!("{} ms", self.bix_data.min_average_interval).into(),
+            ]),
+            Row::new(vec![
+                Text::raw("Capacity Granularity 1").add_modifier(Modifier::BOLD),
+                format!("{} {}", self.bix_data.capacity_gran1, power_unit.as_capacity_str()).into(),
+            ]),
+            Row::new(vec![
+                Text::raw("Capacity Granularity 2").add_modifier(Modifier::BOLD),
+                format!("{} {}", self.bix_data.capacity_gran2, power_unit.as_capacity_str()).into(),
+            ]),
+            Row::new(vec![
+                Text::raw("Model Number").add_modifier(Modifier::BOLD),
+                format!("{}", self.bix_data.model_number).into(),
+            ]),
+            Row::new(vec![
+                Text::raw("Serial Number").add_modifier(Modifier::BOLD),
+                format!("{}", self.bix_data.serial_number).into(),
+            ]),
+            Row::new(vec![
+                Text::raw("Battery Type").add_modifier(Modifier::BOLD),
+                format!("{}", self.bix_data.battery_type).into(),
+            ]),
+            Row::new(vec![
+                Text::raw("OEM Info").add_modifier(Modifier::BOLD),
+                format!("{}", self.bix_data.oem_info).into(),
+            ]),
+            Row::new(vec![
+                Text::raw("Swapping Capability").add_modifier(Modifier::BOLD),
+                format!("{}", self.bix_data.swap_cap.as_str()).into(),
+            ]),
         ]
     }
 
     fn render_bix(&self, area: Rect, buf: &mut Buffer) {
-        let title = common::title_str_with_status("Battery Info", self.state.bix_success);
-        let title = common::title_block(&title, 1, LABEL_COLOR);
-        Paragraph::new(self.create_info()).block(title).render(area, buf);
+        let widths = [Constraint::Percentage(30), Constraint::Percentage(70)];
+        let table = Table::new(self.create_info(), widths)
+            .block(Block::bordered().title("Battery Info"))
+            .style(Style::new().white());
+        Widget::render(table, area, buf);
     }
 
     fn create_status(&self) -> Vec<Line<'static>> {
