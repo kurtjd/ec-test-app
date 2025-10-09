@@ -12,6 +12,7 @@ pub mod common;
 pub mod rtc;
 pub mod thermal;
 pub mod ucsi;
+pub mod widgets;
 
 /// Trait implemented by all data sources
 pub trait Source: Clone {
