@@ -1,15 +1,17 @@
 use crate::Source;
 use crate::app::Module;
 use crate::common;
+use crate::widgets::battery;
 use color_eyre::{Report, Result, eyre::eyre};
 
+use ratatui::widgets::{StatefulWidget, Widget};
 use ratatui::{
     buffer::Buffer,
     crossterm::event::{Event, KeyCode, KeyEventKind},
     layout::{Direction, Rect},
     style::{Color, Style, Stylize, palette::tailwind},
     text::{Line, Span},
-    widgets::{Bar, BarChart, BarGroup, Block, BorderType, Borders, Paragraph, Widget},
+    widgets::{Block, Paragraph},
 };
 use tui_input::{Input, backend::crossterm::EventHandler};
 
@@ -440,113 +442,16 @@ impl<S: Source> Battery<S> {
     }
 
     fn render_battery(&self, area: Rect, buf: &mut Buffer) {
-        let bat_percent = (self.bst_data.capacity * 100)
-            .checked_div(self.bix_data.design_capacity)
-            .unwrap_or(0)
-            .clamp(0, 100);
+        let mut state =
+            battery::BatteryState::new(self.bst_data.capacity, self.bst_data.state == ChargeState::Charging);
 
-        let [tip_area, battery_area] = common::area_split(area, Direction::Vertical, 10, 90);
-        let bar = Bar::default()
-            .value(bat_percent as u64)
-            .text_value(format!("{bat_percent}%"));
-        let color = if self.bst_data.capacity < self.bix_data.low_capacity {
-            BATGAUGE_COLOR_LOW
-        } else if self.bst_data.capacity < self.bix_data.warning_capacity {
-            BATGAUGE_COLOR_MEDIUM
-        } else {
-            BATGAUGE_COLOR_HIGH
-        };
-
-        BarChart::default()
-            .data(BarGroup::default().bars(&[bar]))
-            .max(100)
-            .bar_gap(0)
-            .bar_style(Style::default().fg(color))
-            .block(Block::default().borders(Borders::ALL).border_type(BorderType::Double))
-            .bar_width(battery_area.width - 2)
-            .render(battery_area, buf);
-
-        let width = tip_area.width / 3;
-        let x = tip_area.x + (tip_area.width - width) / 2;
-        let tip_area = Rect {
-            x,
-            y: tip_area.y,
-            width,
-            height: tip_area.height,
-        };
-        Block::default()
-            .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
-            .border_type(BorderType::Double)
-            .render(tip_area, buf);
-
-        if self.bst_data.state == ChargeState::Charging {
-            render_bolt(battery_area, buf);
-        }
+        battery::Battery::default()
+            .color_high(BATGAUGE_COLOR_HIGH)
+            .color_warning(BATGAUGE_COLOR_MEDIUM)
+            .color_low(BATGAUGE_COLOR_LOW)
+            .design_capacity(self.bix_data.design_capacity)
+            .warning_capacity(self.bix_data.warning_capacity)
+            .low_capacity(self.bix_data.low_capacity)
+            .render(area, buf, &mut state)
     }
-}
-
-fn render_bolt(area: Rect, buf: &mut Buffer) {
-    // Bolt outline
-    const BOLT: [(f64, f64); 7] = [
-        (0.60, 0.05),
-        (0.42, 0.40),
-        (0.64, 0.40),
-        (0.26, 0.95),
-        (0.50, 0.55),
-        (0.32, 0.55),
-        (0.60, 0.05),
-    ];
-    let area = Rect {
-        x: area.x + area.width / 15,
-        y: area.y + area.height / 4,
-        width: area.width,
-        height: area.height / 2,
-    };
-
-    // fill the bolt with dense points using braille marker (2x4 subcells per cell)
-    ratatui::widgets::canvas::Canvas::default()
-        .x_bounds([0.0, 1.0])
-        .y_bounds([0.0, 1.0])
-        .marker(ratatui::symbols::Marker::Braille)
-        .paint(|ctx| {
-            let mut pts: Vec<(f64, f64)> = Vec::new();
-
-            // sampling density (increase if you want smoother)
-            const SX: usize = 160; // sub-samples across X
-            const SY: usize = 320; // sub-samples across Y
-
-            for iy in 0..SY {
-                let y = (iy as f64 + 0.5) / SY as f64;
-                // find polygon-edge intersections with this scanline
-                let mut xs: Vec<f64> = Vec::new();
-                for i in 0..BOLT.len() - 1 {
-                    let (x1, y1) = BOLT[i];
-                    let (x2, y2) = BOLT[i + 1];
-                    if (y1 > y) != (y2 > y) && (y2 - y1).abs() > f64::EPSILON {
-                        let t = (y - y1) / (y2 - y1);
-                        xs.push(x1 + t * (x2 - x1));
-                    }
-                }
-                xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-                // fill between pairs of intersections with sub-sampled points
-                for pair in xs.chunks(2) {
-                    if pair.len() < 2 {
-                        continue;
-                    }
-                    let (x0, x1) = (pair[0], pair[1]);
-                    let steps = ((x1 - x0) * SX as f64).max(1.0).ceil() as usize;
-                    for s in 0..steps {
-                        let x = x0 + (s as f64 + 0.5) / SX as f64;
-                        pts.push((x, y));
-                    }
-                }
-            }
-
-            ctx.draw(&ratatui::widgets::canvas::Points {
-                coords: pts.as_slice(),
-                color: Color::Yellow,
-            });
-        })
-        .render(area, buf);
 }
